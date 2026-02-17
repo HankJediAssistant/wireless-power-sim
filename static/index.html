@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>⚡ Wireless Power Transfer Simulator</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #fff;
+    }
+    header { text-align: center; margin-bottom: 15px; }
+    header h1 { font-size: 1.6rem; margin-bottom: 2px; }
+    header p { opacity: 0.7; font-size: 0.85rem; }
+
+    .container { max-width: 1600px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: 300px 1fr; gap: 15px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+    .card h3 { margin-bottom: 10px; font-size: 1rem; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 8px; }
+
+    .slider-group { margin-bottom: 14px; }
+    .slider-group label { display: block; margin-bottom: 5px; font-size: 0.85rem; }
+    .slider-group .value { float: right; font-weight: 600; color: #4ecdc4; }
+    .slider-group input[type="range"] {
+      width: 100%;
+      height: 8px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.2);
+      appearance: none;
+      outline: none;
+    }
+    .slider-group input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #4ecdc4;
+      cursor: pointer;
+    }
+    
+    .results-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .result-item {
+      background: rgba(255,255,255,0.1);
+      padding: 10px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .result-item .label { font-size: 0.75rem; opacity: 0.7; margin-bottom: 3px; }
+    .result-item .value { font-size: 1.2rem; font-weight: 700; color: #4ecdc4; }
+    .result-item .unit { font-size: 0.75rem; opacity: 0.7; }
+    .result-item .formula { font-size: 0.65rem; opacity: 0.5; margin-top: 3px; }
+    .result-item.warning .value { color: #f39c12; }
+    .result-item.danger .value { color: #e74c3c; }
+    .result-item.success .value { color: #2ecc71; }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    .status-badge.over-coupled { background: #e74c3c; }
+    .status-badge.under-coupled { background: #f39c12; }
+    .status-badge.critically-coupled { background: #2ecc71; }
+    
+    .chart-container { height: 250px; }
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+    .charts-row .card { margin-bottom: 0; }
+    @media (max-width: 1200px) { .charts-row { grid-template-columns: 1fr; } }
+    
+    .coil-viz {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      padding: 15px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    .coil {
+      width: 60px;
+      height: 60px;
+      border: 3px solid #4ecdc4;
+      border-radius: 50%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+    }
+    .coil::before {
+      content: '';
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      border: 2px solid #4ecdc4;
+      border-radius: 50%;
+      opacity: 0.6;
+    }
+    .coil::after {
+      content: '';
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      border: 2px solid #4ecdc4;
+      border-radius: 50%;
+      opacity: 0.4;
+    }
+    .gap-indicator {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #f39c12;
+      min-width: 60px;
+      text-align: center;
+    }
+    .field-lines {
+      position: absolute;
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #4ecdc4, transparent);
+      opacity: 0.5;
+      animation: pulse 1s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 0.7; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⚡ Wireless Power Transfer Simulator</h1>
+    <p>Coil-to-coil inductive power transfer for rotating robot joints</p>
+  </header>
+  
+  <div class="container">
+    <div class="grid">
+      <!-- Controls Panel -->
+      <div class="controls">
+        <div class="card">
+          <h3>🎛️ Operating Parameters</h3>
+          
+          <div class="slider-group">
+            <label>Air Gap <span class="value" id="gap-val">5 mm</span></label>
+            <input type="range" id="air-gap" min="1" max="50" value="5" step="0.5">
+          </div>
+          
+          <div class="slider-group">
+            <label>Frequency <span class="value" id="freq-val">200 kHz</span></label>
+            <input type="range" id="frequency" min="10" max="1000" value="200" step="10">
+          </div>
+
+          <div class="slider-group">
+            <label>Input Power <span class="value" id="power-val">10 W</span></label>
+            <input type="range" id="power" min="1" max="100" value="10" step="1">
+          </div>
+          
+          <div class="slider-group">
+            <label>Input Voltage <span class="value" id="voltage-val">24 V</span></label>
+            <input type="range" id="voltage" min="5" max="60" value="24" step="1">
+          </div>
+        </div>
+        
+        <div class="card">
+          <h3>🔧 Coil Design</h3>
+          
+          <div class="slider-group">
+            <label>Coil Radius <span class="value" id="radius-val">25 mm</span></label>
+            <input type="range" id="radius" min="10" max="100" value="25" step="5">
+          </div>
+          
+          <div class="slider-group">
+            <label>Primary Turns <span class="value" id="turns1-val">20</span></label>
+            <input type="range" id="turns1" min="5" max="50" value="20" step="1">
+          </div>
+          
+          <div class="slider-group">
+            <label>Secondary Turns <span class="value" id="turns2-val">20</span></label>
+            <input type="range" id="turns2" min="5" max="50" value="20" step="1">
+          </div>
+          
+          <div class="slider-group">
+            <label>Load Resistance <span class="value" id="load-val">10 Ω</span></label>
+            <input type="range" id="load" min="1" max="100" value="10" step="1">
+          </div>
+        </div>
+      </div>
+      
+      <!-- Results Panel -->
+      <div class="results">
+        <div class="card">
+          <h3>📊 Simulation Results</h3>
+          
+          <div class="coil-viz">
+            <div class="coil">Primary</div>
+            <div class="gap-indicator" id="gap-viz">5 mm</div>
+            <div class="coil">Secondary</div>
+          </div>
+          
+          <div class="results-grid">
+            <div class="result-item" id="efficiency-card">
+              <div class="label">Efficiency</div>
+              <div class="value" id="efficiency">--</div>
+              <div class="unit">%</div>
+            </div>
+            <div class="result-item">
+              <div class="label">Coupling (k)</div>
+              <div class="value" id="coupling">--</div>
+              <span class="status-badge" id="coupling-status">--</span>
+            </div>
+            <div class="result-item">
+              <div class="label">Primary Current</div>
+              <div class="value" id="i-primary">--</div>
+              <div class="unit">A</div>
+            </div>
+            <div class="result-item">
+              <div class="label">Secondary Current</div>
+              <div class="value" id="i-secondary">--</div>
+              <div class="unit">A</div>
+            </div>
+            <div class="result-item" id="power-out-card">
+              <div class="label">Power Output</div>
+              <div class="value" id="p-output">--</div>
+              <div class="unit">W</div>
+            </div>
+            <div class="result-item">
+              <div class="label">Power Loss</div>
+              <div class="value" id="p-loss">--</div>
+              <div class="unit">W</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="charts-row">
+          <div class="card">
+            <h3>📈 Efficiency vs Air Gap</h3>
+            <div class="chart-container">
+              <canvas id="gap-chart"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <h3>⚡ Power vs Air Gap</h3>
+            <div class="chart-container">
+              <canvas id="power-chart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>🔌 Component Values</h3>
+          <div class="results-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
+            <div class="result-item">
+              <div class="label">L₁ (Primary)</div>
+              <div class="value" id="l1">--</div>
+              <div class="unit">μH</div>
+              <div class="formula">Wheeler's formula from radius, turns, wire ∅</div>
+            </div>
+            <div class="result-item">
+              <div class="label">L₂ (Secondary)</div>
+              <div class="value" id="l2">--</div>
+              <div class="unit">μH</div>
+              <div class="formula">Wheeler's formula from radius, turns, wire ∅</div>
+            </div>
+            <div class="result-item">
+              <div class="label">C₁ (Resonant)</div>
+              <div class="value" id="c1">--</div>
+              <div class="unit">nF</div>
+              <div class="formula">C = 1 / (4π²f²L₁)</div>
+            </div>
+            <div class="result-item">
+              <div class="label">C₂ (Resonant)</div>
+              <div class="value" id="c2">--</div>
+              <div class="unit">nF</div>
+              <div class="formula">C = 1 / (4π²f²L₂)</div>
+            </div>
+            <div class="result-item">
+              <div class="label">Q₁ Factor</div>
+              <div class="value" id="q1">--</div>
+              <div class="formula">Q = ωL / R_ac</div>
+            </div>
+            <div class="result-item">
+              <div class="label">Q₂ Factor</div>
+              <div class="value" id="q2">--</div>
+              <div class="formula">Q = ωL / R_ac</div>
+            </div>
+            <div class="result-item">
+              <div class="label">Skin Depth</div>
+              <div class="value" id="skin-depth">--</div>
+              <div class="unit">mm</div>
+              <div class="formula">δ = √(ρ / πfμ₀)</div>
+            </div>
+            <div class="result-item">
+              <div class="label">R_ac/R_dc</div>
+              <div class="value" id="r-ratio">--</div>
+              <div class="unit">x</div>
+              <div class="formula">Skin effect resistance multiplier</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Chart setup
+    const ctx = document.getElementById('gap-chart').getContext('2d');
+    const gapChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Efficiency %',
+          data: [],
+          borderColor: '#4ecdc4',
+          backgroundColor: 'rgba(78, 205, 196, 0.1)',
+          fill: true,
+          tension: 0.4
+        }, {
+          label: 'Coupling k',
+          data: [],
+          borderColor: '#f39c12',
+          backgroundColor: 'rgba(243, 156, 18, 0.1)',
+          fill: true,
+          tension: 0.4,
+          yAxisID: 'y1'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        scales: {
+          x: { 
+            title: { display: true, text: 'Air Gap (mm)', color: '#fff' },
+            ticks: { color: '#aaa' },
+            grid: { color: 'rgba(255,255,255,0.1)' }
+          },
+          y: { 
+            title: { display: true, text: 'Efficiency %', color: '#4ecdc4' },
+            ticks: { color: '#aaa' },
+            grid: { color: 'rgba(255,255,255,0.1)' },
+            min: 0, max: 100
+          },
+          y1: {
+            position: 'right',
+            title: { display: true, text: 'Coupling k', color: '#f39c12' },
+            ticks: { color: '#aaa' },
+            grid: { display: false },
+            min: 0, max: 1
+          }
+        },
+        plugins: {
+          legend: { labels: { color: '#fff' } }
+        }
+      }
+    });
+    
+    // Power vs Air Gap chart
+    const powerCtx = document.getElementById('power-chart').getContext('2d');
+    const powerChart = new Chart(powerCtx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Power Output (W)',
+          data: [],
+          borderColor: '#2ecc71',
+          backgroundColor: 'rgba(46, 204, 113, 0.1)',
+          fill: true,
+          tension: 0.4
+        }, {
+          label: 'Power Input (W)',
+          data: [],
+          borderColor: '#3498db',
+          backgroundColor: 'rgba(52, 152, 219, 0.1)',
+          fill: false,
+          tension: 0.4
+        }, {
+          label: 'Power Loss (W)',
+          data: [],
+          borderColor: '#e74c3c',
+          backgroundColor: 'rgba(231, 76, 60, 0.1)',
+          fill: true,
+          tension: 0.4,
+          yAxisID: 'y1'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        scales: {
+          x: {
+            title: { display: true, text: 'Air Gap (mm)', color: '#fff' },
+            ticks: { color: '#aaa' },
+            grid: { color: 'rgba(255,255,255,0.1)' }
+          },
+          y: {
+            title: { display: true, text: 'Power (W)', color: '#2ecc71' },
+            ticks: { color: '#aaa' },
+            grid: { color: 'rgba(255,255,255,0.1)' },
+            min: 0
+          },
+          y1: {
+            position: 'right',
+            title: { display: true, text: 'Power Loss (W)', color: '#e74c3c' },
+            ticks: { color: '#aaa' },
+            grid: { display: false },
+            min: 0
+          }
+        },
+        plugins: {
+          legend: { labels: { color: '#fff' } }
+        }
+      }
+    });
+
+    // Get current params from sliders
+    function getParams() {
+      return {
+        air_gap: parseFloat(document.getElementById('air-gap').value) / 1000,
+        frequency: parseFloat(document.getElementById('frequency').value) * 1000,
+        input_power: parseFloat(document.getElementById('power').value),
+        input_voltage: parseFloat(document.getElementById('voltage').value),
+        coil_radius: parseFloat(document.getElementById('radius').value) / 1000,
+        primary_turns: parseInt(document.getElementById('turns1').value),
+        secondary_turns: parseInt(document.getElementById('turns2').value),
+        load_resistance: parseFloat(document.getElementById('load').value)
+      };
+    }
+    
+    // Update display values
+    function updateDisplayValues() {
+      document.getElementById('gap-val').textContent = document.getElementById('air-gap').value + ' mm';
+      document.getElementById('freq-val').textContent = document.getElementById('frequency').value + ' kHz';
+      document.getElementById('power-val').textContent = document.getElementById('power').value + ' W';
+      document.getElementById('voltage-val').textContent = document.getElementById('voltage').value + ' V';
+      document.getElementById('radius-val').textContent = document.getElementById('radius').value + ' mm';
+      document.getElementById('turns1-val').textContent = document.getElementById('turns1').value;
+      document.getElementById('turns2-val').textContent = document.getElementById('turns2').value;
+      document.getElementById('load-val').textContent = document.getElementById('load').value + ' Ω';
+      document.getElementById('gap-viz').textContent = document.getElementById('air-gap').value + ' mm';
+    }
+    
+    // Run simulation
+    async function simulate() {
+      const params = getParams();
+      
+      try {
+        const res = await fetch('/api/simulate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params)
+        });
+        const data = await res.json();
+        updateResults(data.results);
+      } catch (err) {
+        console.error('Simulation error:', err);
+      }
+    }
+    
+    // Update results display
+    function updateResults(r) {
+      // Efficiency
+      const eff = r.efficiency.percent;
+      document.getElementById('efficiency').textContent = eff.toFixed(1);
+      const effCard = document.getElementById('efficiency-card');
+      effCard.className = 'result-item ' + (eff > 80 ? 'success' : (eff > 50 ? 'warning' : 'danger'));
+      
+      // Coupling
+      document.getElementById('coupling').textContent = r.coupling.coefficient.toFixed(3);
+      const statusBadge = document.getElementById('coupling-status');
+      statusBadge.textContent = r.coupling.status;
+      statusBadge.className = 'status-badge ' + r.coupling.status;
+      
+      // Currents
+      document.getElementById('i-primary').textContent = r.currents.primary_A.toFixed(2);
+      document.getElementById('i-secondary').textContent = r.currents.secondary_A.toFixed(2);
+      
+      // Power
+      document.getElementById('p-output').textContent = r.efficiency.power_output_W.toFixed(1);
+      document.getElementById('p-loss').textContent = r.efficiency.power_loss_W.toFixed(1);
+      
+      // Inductances
+      document.getElementById('l1').textContent = r.inductances.primary_uH.toFixed(2);
+      document.getElementById('l2').textContent = r.inductances.secondary_uH.toFixed(2);
+      
+      // Capacitors
+      document.getElementById('c1').textContent = r.resonance.capacitor_primary_nF.toFixed(2);
+      document.getElementById('c2').textContent = r.resonance.capacitor_secondary_nF.toFixed(2);
+      
+      // Q factors
+      document.getElementById('q1').textContent = r.quality_factors.Q1.toFixed(0);
+      document.getElementById('q2').textContent = r.quality_factors.Q2.toFixed(0);
+
+      // Skin effect
+      if (r.skin_effect) {
+        document.getElementById('skin-depth').textContent = r.skin_effect.skin_depth_mm.toFixed(3);
+        document.getElementById('r-ratio').textContent = r.skin_effect.resistance_ratio.toFixed(2);
+      }
+
+      // Show max efficiency reference in label
+      if (r.efficiency.max_percent !== undefined) {
+        document.querySelector('#efficiency-card .label').textContent =
+          'Efficiency (max: ' + r.efficiency.max_percent.toFixed(0) + '%)';
+      }
+    }
+    
+    // Update gap sweep charts (efficiency + power)
+    async function updateGapChart() {
+      const params = getParams();
+      try {
+        const queryParams = new URLSearchParams({
+          frequency: params.frequency,
+          power: params.input_power,
+          coil_radius: params.coil_radius,
+          primary_turns: params.primary_turns,
+          secondary_turns: params.secondary_turns,
+          load_resistance: params.load_resistance,
+          input_voltage: params.input_voltage
+        });
+        const res = await fetch(`/api/sweep/airgap?${queryParams}`);
+        const data = await res.json();
+
+        // Update efficiency chart
+        const labels = data.gaps_mm.map(g => g.toFixed(1));
+        gapChart.data.labels = labels;
+        gapChart.data.datasets[0].data = data.efficiencies;
+        gapChart.data.datasets[1].data = data.couplings;
+        gapChart.update();
+
+        // Update power chart
+        powerChart.data.labels = labels;
+        powerChart.data.datasets[0].data = data.power_outputs;
+        powerChart.data.datasets[1].data = data.power_inputs;
+        powerChart.data.datasets[2].data = data.power_losses;
+        powerChart.update();
+      } catch (err) {
+        console.error('Chart error:', err);
+      }
+    }
+    
+    // Debounce function
+    function debounce(fn, delay) {
+      let timeout;
+      return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn(...args), delay);
+      };
+    }
+    
+    // Event listeners
+    const debouncedSimulate = debounce(() => { simulate(); updateGapChart(); }, 100);
+    
+    document.querySelectorAll('input[type="range"]').forEach(input => {
+      input.addEventListener('input', () => {
+        updateDisplayValues();
+        debouncedSimulate();
+      });
+    });
+    
+    // Initial load
+    updateDisplayValues();
+    simulate();
+    updateGapChart();
+  </script>
+</body>
+</html>
